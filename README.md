@@ -37,12 +37,12 @@ npm run dev
 
 This project uses **LangGraph** to coordinate data retrieval and prompt generation.
 
-Build for production:
+Build for production (optional):
 ```bash
 npm run build
 ```
 
-Start the production server:
+Start the server (automatically compiles before running):
 ```bash
 npm start
 ```

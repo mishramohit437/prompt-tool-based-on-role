@@ -5,9 +5,9 @@
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
-    "start": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/server.ts",
+    "build": "tsc",
+    "start": "npm run build && node dist/server.js",
     "dev": "nodemon --watch 'src/**/*.ts' --exec 'node --loader ts-node/esm --no-warnings' src/server.ts",
-    "build": "tsc && tsc-alias",
     "start:prod": "node dist/server.js",
     "test": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest",
     "test:watch": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest --watch",
