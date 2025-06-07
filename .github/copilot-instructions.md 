@@ -1,0 +1,139 @@
+# GitHub Copilot Instructions for Role‑Based Prompt Generation Service
+
+This file contains high‑level instructions and context for GitHub Copilot to scaffold and implement the Node.js backend leveraging LangGraph, mock data, and OpenAI integration for Testers and Business Analysts.
+
+---
+
+## 📦 Project Setup
+
+1. **Initialize the repo**
+   - Create a new Node.js project (`npm init -y`).
+   - Install dependencies:
+     ```bash
+     npm install express dotenv @langchain/langgraph @langchain/openai openai
+     ```
+   - Optionally install TypeScript and add `tsconfig.json`.
+
+2. **Directory structure**
+   ```
+   ├── mocks/
+   │   ├── JIRA-<id>.json       # Static JIRA issue data
+   │   └── CONFLUENCE-<id>.md   # Static Confluence page content
+   ├── src/
+   │   ├── index.js            # Express server entrypoint
+   │   ├── config.js           # Load ENV vars (OpenAI key, model)
+   │   ├── langgraph/
+   │   │   └── graph.js        # Define LangGraph nodes & edges
+   │   └── routes/
+   │       └── generate.js     # API handler for /generatePrompt
+   └── .env                    # OPENAI_API_KEY, MODEL_NAME
+   ```
+
+---
+
+## 🚀 LangGraph Workflow
+
+- **State shape:**
+  ```js
+  {
+    role: string,        // "Tester" or "Business Analyst"
+    jiraId: string,
+    confId: string,
+    jiraData?: object,
+    confData?: object,
+    output?: string,
+    error?: string,
+  }
+  ```
+
+- **Nodes**:
+  1. `fetchJiraNode`: read `mocks/JIRA-{jiraId}.json` into `state.jiraData` or set error.
+  2. `fetchConfluenceNode`: read `mocks/CONFLUENCE-{confId}.md` into `state.confData` or set error.
+  3. `roleRouterNode`: inspect `state.role`, branch to `testerPromptNode` or `baPromptNode`, or set error if invalid.
+  4. `testerPromptNode`: build tester prompt using `jiraData` & `confData`, call OpenAI, store in `state.output`.
+  5. `baPromptNode`: build BA prompt using `jiraData` & `confData`, call OpenAI, store in `state.output`.
+
+- **Edges**:
+  ```js
+  graph.addEdge('fetchJiraNode', 'fetchConfluenceNode');
+  graph.addEdge('fetchConfluenceNode', 'roleRouterNode');
+  graph.addConditionalEdge('roleRouterNode', (s) => s.role === 'Tester' ? 'testerPromptNode' : 'baPromptNode');
+  ```
+
+---
+
+## 🔌 API Endpoint
+
+- **Route:** `POST /generatePrompt`
+- **Request JSON:**
+  ```json
+  { "role": "Tester|Business Analyst", "jiraId": "ABC-123", "confId": "REQ-456" }
+  ```
+- **Success Response (200):**
+  ```json
+  {
+    "role": "Tester",
+    "jiraId": "ABC-123",
+    "confId": "REQ-456",
+    "output": "<AI-generated text>"
+  }
+  ```
+- **Error Response (4xx/5xx):**
+  ```json
+  { "error": "<error message>" }
+  ```
+
+---
+
+## 📝 Mock Data Format
+
+- **JIRA JSON** (`mocks/JIRA-<jiraId>.json`):
+  ```json
+  {
+    "summary": "Issue title...",
+    "description": "Detailed description...",
+    "acceptanceCriteria": ["...", "..."]
+  }
+  ```
+
+- **Confluence MD** (`mocks/CONFLUENCE-<confId>.md`):
+  ```markdown
+  # Page Title
+  Detailed content and notes...
+  ```
+
+---
+
+## 🛠️ Implementation Details
+
+- **Reading mock files**: use `fs.promises.readFile`, `JSON.parse` for JIRA, and load `.md` as text for Confluence.
+- **LLM integration**: use `LangChainOpenAI` or direct `openai.createChatCompletion` with model from config.
+- **Prompt templates**: embed `jiraData.summary`, `jiraData.description`, and first ~2000 chars of `confData`.
+- **Error handling**: catch file read & API errors, set `state.error`, return appropriate HTTP status.
+
+---
+
+## ✅ Testing
+
+- **Unit tests** for each LangGraph node:
+  - Valid mock IDs → correct `state.jiraData` / `state.confData`.
+  - Invalid IDs → `state.error` set and workflow stops.
+  - Role variations → routes to correct prompt node.
+- **Integration test**:
+  - Simulate POST `/generatePrompt` with valid payload → expect `200` and non-empty `output`.
+  - Simulate missing/invalid inputs → expect `4xx` with correct error.
+
+---
+
+## ⚙️ Configuration & Environment
+
+- `.env`:
+  ```env
+  OPENAI_API_KEY=sk-...
+  MODEL_NAME=gpt-4-turbo
+  ```
+- **Logging**: use `console.log` at node entry/exit; log prompt length but not full content.
+
+---
+
+> **Now, use GitHub Copilot** to generate and implement files according to this specification. Start by scaffolding the project structure, then define the LangGraph workflow and Express routes, followed by mock data and error handling.
