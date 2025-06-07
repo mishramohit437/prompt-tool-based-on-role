@@ -9,29 +9,35 @@ const jiraService = new JiraService();
 const confluenceService = new ConfluenceService();
 const promptService = new PromptGenerationService();
 
-export async function executePromptWorkflow(input: { role: Role; jiraId: string; confId: string }): Promise<WorkflowState> {
+interface PromptWorkflowInput {
+    role: Role;
+    jiraId: string;
+    confId: string;
+}
+
+export async function executePromptWorkflow(input: PromptWorkflowInput): Promise<WorkflowState> {
     const graph = new StateGraph<WorkflowState>();
 
-    graph.addNode('fetchJira', async (state: WorkflowState) => {
+    graph.addNode('fetchJira', async (state: WorkflowState): Promise<WorkflowState> => {
         const jiraData = await jiraService.fetchJiraData(state.jiraId);
-        return { ...state, jiraData } as WorkflowState;
+        return { ...state, jiraData };
     });
 
-    graph.addNode('fetchConfluence', async (state: WorkflowState) => {
+    graph.addNode('fetchConfluence', async (state: WorkflowState): Promise<WorkflowState> => {
         const confData = await confluenceService.fetchConfluenceData(state.confId);
-        return { ...state, confData } as WorkflowState;
+        return { ...state, confData };
     });
 
-    graph.addNode('router', async (state: WorkflowState) => state);
+    graph.addNode('router', async (state: WorkflowState): Promise<WorkflowState> => state);
 
-    graph.addNode('testerPrompt', async (state: WorkflowState) => {
+    graph.addNode('testerPrompt', async (state: WorkflowState): Promise<WorkflowState> => {
         const output = await promptService.generatePrompt(state);
-        return { ...state, output } as WorkflowState;
+        return { ...state, output };
     });
 
-    graph.addNode('baPrompt', async (state: WorkflowState) => {
+    graph.addNode('baPrompt', async (state: WorkflowState): Promise<WorkflowState> => {
         const output = await promptService.generatePrompt(state);
-        return { ...state, output } as WorkflowState;
+        return { ...state, output };
     });
 
     graph.addEdge('fetchJira', 'fetchConfluence');
@@ -52,7 +58,8 @@ export async function executePromptWorkflow(input: { role: Role; jiraId: string;
         role: input.role,
         jiraId: input.jiraId,
         confId: input.confId
-    } as WorkflowState);
+    });
 
     return result;
 }
+
