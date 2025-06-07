@@ -1,0 +1,4 @@
+{
+  "title": "Authentication System Design Document",
+  "body": "## Overview\nThis document outlines the authentication system architecture and implementation details.\n\n## Authentication Flow\n1. User enters email/password or clicks social login\n2. System validates input format\n3. System checks credentials or processes OAuth\n4. On success, generates JWT token\n5. Returns token to client\n\n## Security Considerations\n- All passwords must be hashed using bcrypt\n- HTTPS required for all auth endpoints\n- Rate limiting on login attempts\n- Session management with refresh tokens\n\n## Integration Points\n- Google OAuth API\n- Email service for password reset\n- User database (PostgreSQL)\n\n## Technical Requirements\n- Node.js backend with Express\n- JWT for session management\n- OAuth2.0 implementation\n- Password reset flow with expiring tokens"
+}

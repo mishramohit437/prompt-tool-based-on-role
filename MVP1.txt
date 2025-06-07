@@ -1,0 +1,271 @@
+## User Stories for MVP1
+
+Below are the core user stories for MVP1, organized by functional and technical needs. Each story follows the standard format: *As a \[role], I want \[goal] so that \[benefit]*. Acceptance criteria clarify when the story is considered done.
+
+---
+
+### 1. Role-Based Input Submission
+
+**User Story:**
+As a **user** (Tester or Business Analyst), I want to submit my role along with a JIRA ID and a Confluence ID so that the system can identify which workflow to run and what context to use for prompt generation.
+
+**Acceptance Criteria:**
+
+* The API must accept a payload containing:
+
+  * `role` (string, either `"Tester"` or `"Business Analyst"`)
+  * `jiraId` (string)
+  * `confId` (string)
+* If `role` is not one of the supported values, the API returns a `400 Bad Request` with an error message: “Invalid role: must be ‘Tester’ or ‘Business Analyst’.”
+* If any of `role`, `jiraId`, or `confId` is missing, the API returns a `400 Bad Request` indicating the missing field(s).
+* On valid input, the system proceeds to fetch mock data without immediately returning an error.
+
+---
+
+### 2. Fetch Mock JIRA Data
+
+**User Story:**
+As a **developer**, I want the system to fetch mock JIRA data based on the provided `jiraId` so that the workflow can build prompts using that issue’s content.
+
+**Acceptance Criteria:**
+
+* There is a `fetchJira(issueId)` function (or equivalent LangGraph node) that:
+
+  * Reads a JSON file (e.g., `mocks/JIRA-<jiraId>.json`) from disk.
+  * Parses it into a JavaScript object with at least: `summary`, `description`, and `acceptanceCriteria`.
+* If the file `mocks/JIRA-<jiraId>.json` exists:
+
+  * Return the parsed JSON and store it in `state.jiraData`.
+* If the file does not exist:
+
+  * Throw an error or set `state.error` with message “JIRA data not found for ID: <jiraId>.”
+  * Halt further execution and return a `404 Not Found` response to the client with that error message.
+
+---
+
+### 3. Fetch Mock Confluence Data
+
+**User Story:**
+As a **developer**, I want the system to fetch mock Confluence data based on the provided `confId` so that the workflow can build prompts using that page’s content.
+
+**Acceptance Criteria:**
+
+* There is a `fetchConfluence(pageId)` function (or equivalent LangGraph node) that:
+
+  * Reads a JSON or Markdown file (e.g., `mocks/CONFLUENCE-<confId>.json` or `.md`) from disk.
+  * Parses it into a JavaScript object with at least: `title` and `body`.
+* If the file `mocks/CONFLUENCE-<confId>.json` (or `.md`) exists:
+
+  * Return the parsed content and store it in `state.confData`.
+* If the file does not exist:
+
+  * Throw an error or set `state.error` with message “Confluence data not found for ID: <confId>.”
+  * Halt further execution and return a `404 Not Found` response to the client with that error message.
+
+---
+
+### 4. Conditional Routing by Role (LangGraph)
+
+**User Story:**
+As a **developer**, I want LangGraph to branch the workflow based on the user’s `role` so that the correct prompt-generation node is invoked (Tester vs. Business Analyst).
+
+**Acceptance Criteria:**
+
+* After both `jiraData` and `confData` are loaded into `state`, the graph evaluates `state.role`.
+* If `state.role === "Tester"`, the execution graph follows the **testerPromptNode** path.
+* If `state.role === "Business Analyst"`, the execution graph follows the **baPromptNode** path.
+* If `state.role` is anything else, the graph terminates early with an error node setting `state.error = "Unsupported role: <role>"`.
+
+---
+
+### 5. Generate Test Case Ideas for Testers
+
+**User Story:**
+As a **Tester**, I want the system to generate test case ideas (including steps and edge conditions) based on the JIRA & Confluence context so that I can quickly get a baseline set of test scenarios.
+
+**Acceptance Criteria:**
+
+* The **testerPromptNode** must:
+
+  1. Read `state.jiraData` and `state.confData`.
+  2. Construct a prompt of the form:
+
+     > “You are a QA engineer. Given the following JIRA issue and Confluence page, generate a list of test cases (with title, preconditions, steps, and expected results). Include edge cases and negative tests.”
+
+     * Include `jiraData.summary`, `jiraData.description`, and `confData.body` (or a trimmed version if it’s too long).
+  3. Call the OpenAI API (e.g., GPT-4 or GPT-3.5-Turbo) with that prompt.
+  4. Store the raw model response in `state.output`.
+* When complete:
+
+  * `state.output` contains a Markdown-formatted list of at least 5 test cases with details.
+  * If the OpenAI call fails (e.g., network error or rate limit), catch the error and set `state.error = "LLM request failed: <error message>"`.
+* The API returns a `200 OK` with JSON `{ "output": state.output }` if no errors occurred.
+
+---
+
+### 6. Generate Requirement Clarifications for Business Analysts
+
+**User Story:**
+As a **Business Analyst**, I want the system to generate clarifying questions and acceptance criteria suggestions based on the JIRA & Confluence context so that I can ensure requirements are unambiguous before kickoff.
+
+**Acceptance Criteria:**
+
+* The **baPromptNode** must:
+
+  1. Read `state.jiraData` and `state.confData`.
+  2. Construct a prompt of the form:
+
+     > “You are a Business Analyst. Given the following JIRA issue and Confluence page, list clarifying questions, restate any ambiguous requirements, and propose acceptance criteria. Format your response as a numbered list.”
+
+     * Include `jiraData.summary`, `jiraData.description`, and `confData.body` (or a trimmed version if too lengthy).
+  3. Call the OpenAI API with that prompt.
+  4. Store the raw model response in `state.output`.
+* When complete:
+
+  * `state.output` contains at least 5 bullet points or questions, formatted clearly.
+  * If the OpenAI call fails, catch it and set `state.error = "LLM request failed: <error message>"`.
+* The API returns a `200 OK` with JSON `{ "output": state.output }` if successful.
+
+---
+
+### 7. Return AI-Generated Output to the Client
+
+**User Story:**
+As a **user** (Tester or BA), I want to receive the AI-generated response (test cases or clarifications) as the API’s output so that I can view and use it immediately.
+
+**Acceptance Criteria:**
+
+* After LangGraph completes execution (no errors), the backend returns:
+
+  * HTTP status `200 OK`
+  * JSON payload:
+
+    ```json
+    {
+      "role": "<Tester|Business Analyst>",
+      "jiraId": "<jiraId>",
+      "confId": "<confId>",
+      "output": "<AI-generated text>"
+    }
+    ```
+* If `state.error` is set at any point:
+
+  * Return HTTP status `400 Bad Request` or `500 Internal Server Error` depending on the error type.
+  * JSON payload:
+
+    ```json
+    {
+      "error": "<error message>"
+    }
+    ```
+* Content-Type must be `application/json`.
+
+---
+
+### 8. Basic Error Handling and Validation
+
+**User Story:**
+As a **developer**, I want to handle invalid inputs (missing or non-existent IDs) and LLM errors gracefully so that the client receives a clear error message rather than an unhandled exception.
+
+**Acceptance Criteria:**
+
+* **Input Validation Errors**:
+
+  * If `jiraId` or `confId` is missing in the request, return `400 Bad Request` with `"Missing field: <fieldName>"`.
+  * If JIRA or Confluence mock file is not found, return `404 Not Found` with `"JIRA data not found for ID: <jiraId>"` or `"Confluence data not found for ID: <confId>"`.
+* **Role Validation Errors**:
+
+  * If `role` is not `"Tester"` or `"Business Analyst"`, return `400 Bad Request` with `"Invalid role: must be 'Tester' or 'Business Analyst'"`.
+* **LLM Call Errors**:
+
+  * If the OpenAI API returns an error (e.g., invalid API key, rate limit, timeout), catch and return `500 Internal Server Error` with `"LLM request failed: <error message>"`.
+  * Log the full error stack on the server for debugging.
+* All error responses must be JSON with an `error` key.
+
+---
+
+### 9. LangGraph Workflow Definition and Execution
+
+**User Story:**
+As a **developer**, I want to define and execute the prompt-generation workflow using LangGraph so that the graph enforces clear node-by-node execution, including conditional branching.
+
+**Acceptance Criteria:**
+
+* Create a LangGraph instance in Node.js with nodes:
+
+  1. **`fetchJiraNode`**: Loads mock JIRA data into `state.jiraData`.
+  2. **`fetchConfluenceNode`**: Loads mock Confluence data into `state.confData`.
+  3. **`roleRouterNode`** (conditional edge target): Checks `state.role` and routes to either `testerPromptNode` or `baPromptNode`.
+  4. **`testerPromptNode`**: Builds tester-specific prompt and calls OpenAI; writes to `state.output`.
+  5. **`baPromptNode`**: Builds BA-specific prompt and calls OpenAI; writes to `state.output`.
+* Define edges in this order:
+
+  * `fetchJiraNode` → `fetchConfluenceNode` → `roleRouterNode`
+  * From `roleRouterNode` → `testerPromptNode` (if role is Tester)
+  * From `roleRouterNode` → `baPromptNode` (if role is Business Analyst)
+* Ensure each node’s function signature is `async (state) => newState` or throws an error if something goes wrong.
+* In the Node.js API handler, call `await graph.invoke(initialState)` and return `state.output` on success.
+* Unit tests exist to confirm:
+
+  * Correct routing for each role.
+  * That missing mock files cause the graph to short-circuit with `state.error`.
+  * That a valid flow reaches the correct prompt node.
+
+---
+
+### 10. Basic Logging and Configuration
+
+**User Story:**
+As a **developer**, I want to log each major step (data fetch, prompt construction, API call) so that I can trace failures and view execution flow in logs.
+
+**Acceptance Criteria:**
+
+* At the start of each node (e.g., `fetchJiraNode`, `testerPromptNode`), log a message such as `"Starting fetchJiraNode with ID: <jiraId>"`.
+* Upon successful completion of each node, log a message such as `"Completed fetchJiraNode: <keys of jiraData>"`.
+* For the OpenAI calls, log:
+
+  * The prompt length (in tokens or characters) but not the entire prompt text (to avoid leaking sensitive info).
+  * Whether the call succeeded or failed (with error details logged in full to the server log only).
+* Configuration (e.g., OpenAI API key, model name, mock data directory) resides in environment variables or a `.env` file, not hard-coded.
+
+---
+
+### 11. Minimal Frontend (Optional for Manual Testing)
+
+> *This story is optional and can be deferred if the team will use a tool like Postman for testing. If MVP1 needs a very basic UI:*
+
+**User Story:**
+As a **tester or BA**, I want a simple web form with dropdown for `role`, and text inputs for `jiraId` and `confId` so that I can easily invoke the API without using Postman.
+
+**Acceptance Criteria:**
+
+* A single-page HTML form (served from the Node.js app at `/`) with:
+
+  * A `<select>` for `role` (options: “Tester”, “Business Analyst”).
+  * Two `<input type="text">` fields for `jiraId` and `confId`.
+  * A “Generate” `<button>` that submits via JavaScript to `POST /generatePrompt`.
+* On success, display the `output` text in a `<pre>` or scrollable `<div>`.
+* On error, display the `error` message in a visible red text area.
+* No persistent styling required—basic HTML/CSS is sufficient for manual verification.
+
+---
+
+## Summary
+
+For MVP1, the primary focus is on:
+
+1. **Functional Stories**:
+
+   * Users (Tester/BA) can submit inputs.
+   * System fetches mock data.
+   * LangGraph branches based on role.
+   * AI-generated output is returned.
+
+2. **Technical Stories**:
+
+   * Implement mock‐data fetch nodes.
+   * Define and run the LangGraph workflow.
+   * Handle errors and logging.
+   * (Optional) Provide a minimal frontend for manual verification.
+
+Completing these stories ensures that an end-to-end “role-based prompt generation” pipeline is in place, satisfying the MVP1 goal of generating test cases for Testers and requirement clarifications for Business Analysts based on mocked JIRA/Confluence data.

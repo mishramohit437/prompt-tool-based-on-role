@@ -1,0 +1,160 @@
+Retrieve the relevant context (using mocked JIRA/Confluence data).
+
+
+Use an LLM (OpenAI) to generate a role-specific response.
+
+
+For Testers: produce output like test case ideas or test scenarios.
+
+
+For BAs: produce output like requirement clarifications or improvement suggestions.
+
+
+Manage the prompt flow inside a LangGraph workflow (with role-based branches) and return the AI’s response via the Node.js API.
+
+
+Prompt Generation Outputs per Role
+For Testers: Generating Test Case Ideas
+When the user is a Tester, the application should output a set of testing-related ideas derived from the provided context. Given the JIRA ticket (e.g. a user story or bug report) and the Confluence page (perhaps design specs or requirements), the system can prompt the LLM to generate test cases, scenarios, and acceptance criteria. The response might include:
+Test Case Ideas & Scenarios: A list of potential test cases covering functional requirements and edge cases based on the feature description. For example, if the JIRA issue describes a login feature, the LLM could enumerate tests for valid login, invalid password, password reset, UI validations, etc.
+
+
+Edge Cases and Boundary Conditions: Suggestions of corner-case tests that ensure robust coverage (e.g. very long input values, special characters, extreme numerical values). This helps the tester consider scenarios that might be overlooked in normal conditions.
+
+
+Structured Test Case Format: The output could be formatted as bullet points or a step-by-step list for each scenario. For instance, each test case might include a short title, preconditions, steps, and expected results. The prompt can instruct the model to present the test cases clearly (e.g., “List each test scenario with its steps and expected outcome”).
+
+
+Overall, the Tester-focused prompt is geared towards creating a mini test plan. It ensures the LLM’s answer provides valuable testing ideas, potentially including negative tests, edge case handling, and even automation suggestions (like which cases could be automated). This saves testers time by auto-generating a baseline set of test scenarios that they can refine further.
+For Business Analysts: Clarifying Requirements
+For a Business Analyst user, the system’s output should help refine and clarify project requirements. Using the context from JIRA (perhaps a feature request or epic) and Confluence (detailed spec or meeting notes), the LLM can be prompted to generate requirement clarifications, questions, or summaries. The output might include:
+Clarifying Questions: A list of insightful questions or points that need clarification from stakeholders. For example, if the requirement is about an online ticketing system, the AI might ask, “How should the system handle multi-day passes for group bookings?” or “What edge-case refund scenarios should be considered?”. These questions help ensure all ambiguous aspects of the requirements are addressed before development begins.
+
+
+Requirement Summaries or Restatements: The LLM could rephrase the given requirements in a clear, structured way, possibly highlighting any assumptions. This helps the BA double-check understanding and completeness.
+
+
+Acceptance Criteria Suggestions: The output might propose explicit acceptance criteria or success metrics for the requirement. For instance, “User must be able to reset password within 5 minutes of request, and an email confirmation is sent”, if not already specified.
+
+
+Missing Requirements or Edge Cases: The AI can point out any aspects that were not covered in the original write-up. For example, it might note if nothing was said about performance requirements or error handling, prompting the BA to consider those.
+
+
+The BA-focused prompt is essentially asking the AI to act as an assistant BA, ensuring the requirements are crystal-clear. The generated clarifications (like the “10 clarifying questions” example for an online ticketing flow) can be used by the BA in stakeholder discussions to nail down details.
+Mocking JIRA and Confluence Data
+Since we are not integrating with real JIRA/Confluence APIs yet, we will mock the data sources for development and testing. There are a couple of approaches to do this:
+Static JSON Files: Provide static JSON (or text) files representing the content of a JIRA issue and a Confluence page. For example, JIRA-1234.json could contain a JSON object with fields like summary, description, acceptanceCriteria, etc., and ConfluencePage_Design123.json might contain a JSON or markdown of the page content. Our LangGraph nodes can load these files (by ID) and use their content as the context. This approach is straightforward – no external calls needed – and you can easily craft realistic sample data.
+
+
+Simulated API Responses: If we want to more closely mimic real API calls, we could set up a simple mock server or use a library like json-server to serve the JSON data via HTTP. For instance, a GET request to /api/jira/1234 could return the JSON for that issue. However, this may be overkill for early development – using static files is often simpler unless you specifically want to test the integration layer.
+
+
+In either case, the LangGraph workflow will have nodes to fetch the JIRA and Confluence data. Instead of calling real APIs, those nodes will read from the mock data source. This means our graph can be developed and run offline with consistent inputs. Later on, when real integration is possible, we can replace these nodes with actual API calls (while keeping the rest of the workflow intact).
+Implementing Mock Fetch Nodes: In practice, you might create functions like fetchJira(issueId) and fetchConfluence(pageId) that simply read the corresponding JSON from disk. These will populate the state (e.g., state.jiraData and state.confData) with the content, which the prompt-generating nodes will use.
+Choosing an OpenAI Model
+For generating the prompts, we plan to use OpenAI’s models via their API. The specific model can be chosen based on the desired balance of quality vs. cost:
+GPT-4 (e.g. gpt-4 or the latest GPT-4 Turbo version) is a strong candidate for this service. GPT-4 excels at understanding complex context and producing coherent, nuanced outputs. It also has a much larger context window (up to ~8,192 tokens by default, with variants supporting up to 32k tokens) compared to GPT-3.5’s ~4,000 tokens. This is important because we might be feeding in a JIRA description plus a Confluence page content – which could be lengthy. The larger context window allows GPT-4 to consider all that information at once. Additionally, GPT-4 generally provides more accurate and detailed results, especially for tasks like generating test cases or analytical questions, due to its greater number of parameters and improved reasoning abilities.
+
+
+GPT-3.5-Turbo is an alternative if we need to conserve on cost or response time. It’s faster and cheaper, and can still handle the tasks reasonably well, but with some limitations. GPT-3.5 might occasionally miss subtleties in the context or produce more generic outputs, and as noted, it has a smaller capacity for lengthy input. If our JIRA+Confluence context is brief, GPT-3.5 could suffice; otherwise, we’d have to be careful to shorten or summarize inputs to fit the token limit.
+
+
+Since the question indicated “Yes any model,” we have flexibility. Using GPT-4 is recommended for the best results (assuming API access is available) because of its superior understanding and the ability to handle larger inputs in one go. The Node.js backend can use OpenAI’s Node SDK or REST API to call the chosen model. We will also ensure to parameterize the model choice in our code, so it’s easy to switch models or adjust settings (temperature, max tokens) as needed.
+LangGraph Workflow and Role-Based Routing
+We will leverage LangGraph to manage the flow of prompt generation, including branching logic based on the user’s role. LangGraph allows us to define a directed graph of nodes (each performing a specific function) and edges that determine the execution order. Crucially, it supports conditional edges, meaning we can route the execution differently depending on the state.
+Workflow Design:
+State Definition: The LangGraph state will include fields for role (Tester or BA), jiraId, confId, and will later hold jiraData, confData, and the output. For example:
+
+ type State = {
+  role: string,
+  jiraId: string,
+  confId: string,
+  jiraData?: JiraIssue,
+  confData?: ConfluencePage,
+  output?: string
+};
+ This state is shared and can be updated by each node.
+
+
+Nodes for Data Retrieval:
+
+
+JIRA Fetch Node: Given the jiraId in state, this node will retrieve the mock JIRA JSON (either by reading a file or calling a mock API) and store the content in state.jiraData. It might parse out key information like the issue title, description, and any acceptance criteria.
+
+
+Confluence Fetch Node: Similarly, this node uses confId to load the relevant Confluence page content (mocked) into state.confData. This might be raw text or structured data (like page title and body).
+ These two nodes provide the context gathering part of the workflow. We can connect them in sequence (JIRA first, then Confluence) or even in parallel, since they are independent – LangGraph supports parallel branches (fan-out) if needed. For simplicity, sequential is fine: fetch JIRA then fetch Confluence.
+
+
+Conditional Branch (Role Router): After gathering context, the workflow needs to decide which prompt-generation path to take. We add a conditional edge on the graph that checks the role in the state and directs the flow accordingly. In pseudocode, it might look like:
+
+ graph.addConditionalEdges('contextFetched', (state) => {
+    return state.role === 'Tester' ? 'testerPromptNode' : 'baPromptNode';
+});
+ Under the hood, LangGraph will evaluate the provided function and route to the node name it returns (or we could return a special END to terminate if role is unrecognized). This means we don’t need separate API endpoints or external logic for roles – the graph itself contains the branching logic. Maintaining the flow in one place makes it easier to visualize and debug the overall process.
+
+
+Tester Prompt Node: This node is executed if the role is Tester. Its job is to craft the prompt for the LLM and invoke the model. For example, it might take the jiraData and confData from state and construct a prompt like: “You are a QA engineer. Here is a feature description and additional notes. Generate a list of test cases (with steps and expected results) to validate this feature, including edge cases.” The node then calls the OpenAI model (via the OpenAI API wrapper) with this prompt. When the model’s response is received, the node sets state.output to that response (formatted as needed).
+
+
+We can use LangChain’s integration in LangGraph: e.g., utilizing an LLM call node from @langchain/openai. Alternatively, the node can be a simple async function that uses the OpenAI SDK to get a completion.
+
+
+The prompt should incorporate the context: it can include the text from the JIRA ticket and Confluence page (or a summary if they are very large). This ensures the AI has all relevant info to base the test cases on.
+
+
+BA Prompt Node: This node runs if the role is BA. It will similarly build a prompt such as: “You are a business analyst. The following are a user story and related documentation. Provide a set of clarifying questions or requirements improvements to ensure the feature is well-defined.” It might also ask for a summary or identification of any gaps in the requirements. Then it calls the OpenAI model with this prompt and captures the result in state.output.
+
+
+As an example, the prompt could yield questions like those we discussed (e.g., how to handle certain edge conditions in the requirements). We can instruct the model to format the output as a numbered list of questions or points for clarity.
+
+
+End/Return Node: After the appropriate prompt node finishes, the graph can end. LangGraph will have the final state including the output. The Node.js backend can take state.output and return it in the API response to the user. If needed, we could add a final formatting node (for example, to wrap the output in some JSON structure or add additional info), but if not necessary, the prompt node itself can be the last step before the graph terminates.
+
+
+By using LangGraph for this flow, we gain a few benefits:
+The logic is clearly separated into modular nodes and the transitions are explicit (and even visualizable). We can easily add more roles or steps later by extending the graph.
+
+
+Conditional edges let the graph handle role routing internally, avoiding ad-hoc if/else in the Node.js request handler. This makes the system easier to maintain and less error-prone.
+
+
+We can incorporate advanced features of LangGraph if needed, such as state persistence (if we wanted to handle multi-turn interactions or long processes) or even human-in-the-loop interventions. In our simple case, each request is likely one-shot: user asks, we generate and return, so a straightforward graph suffices.
+
+
+Node.js Integration and Workflow Execution
+With the LangGraph workflow defined, integrating it into the Node.js service is straightforward:
+LangGraph Setup: We will use the LangGraph.js library (available via npm as @langchain/langgraph) along with the OpenAI integration (@langchain/openai). Once we install these, we can define our graph in TypeScript/JavaScript. For instance, using a StateGraph class to add nodes and edges as described in the workflow design. The nodes can be defined as async functions that either transform state or call out to external services (like the OpenAI API).
+
+
+API Endpoint: The backend exposes an HTTP endpoint (e.g., POST /generatePrompt) that expects the client to send the user role and the context identifiers (JIRA ID, Confluence ID). Upon receiving a request, the handler will:
+
+
+Initialize the LangGraph state with the provided role, jiraId, confId.
+
+
+Invoke the LangGraph workflow. In code, this might be await graph.invoke(initialState). LangGraph will then execute through all the nodes (fetching data, branching by role, calling the LLM) until completion.
+
+
+Retrieve the output from the final state (the result produced by the LLM node).
+
+
+Send the output back to the client (probably as a JSON response containing the text, or just raw text depending on requirements).
+
+
+Example Flow: Suppose the user (Tester) hits the endpoint with JIRA ID = "ABC-123" and Confluence ID = "REQ-456". The service loads the dummy data for those IDs, runs the graph, and maybe 5 seconds later gets an output like a list of 5 test cases in markdown format. The API then responds with that list. Similarly, if the user was a BA, the output might be 5 clarification questions or a rewritten requirement, which the API returns.
+
+
+Error Handling: We should build in some basic error checks. For example, if the JIRA ID is not found in our mock data, the fetch node could set an error message and we might short-circuit the graph (perhaps by routing to END early). Also, handle cases where the OpenAI API call fails or times out – LangGraph could throw an exception; we might catch it and return an error response. LangGraph’s durability features (if using them) could even allow resuming or retrying if needed, but in a simple scenario, a retry or an error response might suffice.
+
+
+Testing: With static JSON and deterministic prompts, we can test the workflow locally. LangGraph Studio or visualization tools can show the graph execution path, which is helpful to ensure that, for example, a Tester role indeed went through the testerPromptNode and not the BA path. Each node’s output can be logged for debugging.
+
+
+Extensibility: In the future, the Node.js service could support additional roles by adding new branches/nodes (e.g., Developer – to generate design notes or code review checklists). Thanks to the LangGraph design, this would be a matter of defining a new node and adding a condition for the new role in the conditional edge logic.
+
+
+Conclusion
+In summary, the application will use LangGraph to orchestrate a role-sensitive prompt generation workflow, with Node.js as the backbone to interface with users and external APIs. By mocking JIRA and Confluence data, we can develop and test the logic in isolation. The prompt outputs will be tailored: Testers get test case ideas and scenarios, while Business Analysts get requirement clarifications and questions, aligning with each role’s needs. We plan to use a robust OpenAI model (likely GPT-4 for best results) to ensure the generated content is high-quality and context-aware. All the role routing and prompt logic is encapsulated in the LangGraph workflow, keeping the backend service logic simple (just input, invoke, and output). This design should fulfill the requirements and make the system maintainable and scalable for future enhancements.
+Sources: The approach to using LLMs for test case generation and requirement clarification is informed by recent best practices. LLMs can automatically create test cases from requirements and even identify edge conditions, and they can help BAs by suggesting insightful questions for unclear requirements. LangGraph’s conditional branching capability allows implementing such role-dependent behavior cleanly within the AI agent’s workflow. Moreover, opting for GPT-4 gives us a larger context window and better reasoning, which is beneficial when working with extensive JIRA/Confluence content. All these choices contribute to a powerful, role-driven assistant for testers and analysts.
+
