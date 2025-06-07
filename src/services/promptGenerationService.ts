@@ -61,6 +61,9 @@ class PromptGenerationService {
 
     async generatePrompt(state: WorkflowState): Promise<string> {
         try {
+            if (!state.jiraData || !state.confData) {
+                throw new Error('Missing required data: JIRA or Confluence data is missing');
+            }
             const prompt = this.getPromptBasedOnRole(state);
 
             // Call OpenAI API
@@ -83,7 +86,7 @@ class PromptGenerationService {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             logger.error('Error generating prompt:', { error: errorMessage });
-            throw new Error(`Failed to generate prompt: ${errorMessage}`);
+            throw new Error(`Failed to generate prompt using OpenAI API: ${errorMessage}`);
         }
     }
 }

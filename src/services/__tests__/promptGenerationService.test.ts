@@ -57,6 +57,8 @@ describe('PromptGenerationService', () => {
 
     const mockWorkflowState: WorkflowState = {
         role: Role.Tester,
+        jiraId: 'DEMO1',
+        confId: 'DOC1',
         jiraData: mockJiraData,
         confData: mockConfluenceData
     };

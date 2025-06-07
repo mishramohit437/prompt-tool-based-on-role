@@ -1,20 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import JiraService from '../services/jiraService.js';
-import ConfluenceService from '../services/confluenceService.js';
-import PromptGenerationService from '../services/promptGenerationService.js';
-import { Role, WorkflowState } from '../types/index.js';
+import { Role } from '../types/index.js';
 import { AppError } from '../middleware/error.js';
 import logger from '../utils/logger.js';
+import { executePromptWorkflow } from '../workflows/promptWorkflow.js';
 
 class PromptController {
-    private jiraService: JiraService;
-    private confluenceService: ConfluenceService;
-    private promptService: PromptGenerationService;
-
     constructor() {
-        this.jiraService = new JiraService();
-        this.confluenceService = new ConfluenceService();
-        this.promptService = new PromptGenerationService();
+        // No-op constructor; services are handled in the workflow
     }
 
     generatePrompt = async (req: Request, res: Response, next: NextFunction) => {
@@ -28,21 +20,9 @@ class PromptController {
 
             logger.info(`Processing request for role: ${role}, JIRA ID: ${jiraId}, Confluence ID: ${confId}`);
 
-            // Fetch JIRA and Confluence data
-            const [jiraData, confData] = await Promise.all([
-                this.jiraService.fetchJiraData(jiraId),
-                this.confluenceService.fetchConfluenceData(confId)
-            ]);
-
-            // Initialize workflow state with required data
-            const state: WorkflowState = {
-                role,
-                jiraData,
-                confData
-            };
-
-            // Generate prompt based on role
-            const output = await this.promptService.generatePrompt(state);
+            // Execute workflow which handles data fetching and prompt generation
+            const result = await executePromptWorkflow({ role, jiraId, confId });
+            const output = result.output;
 
             // Send response
             res.status(200).json({

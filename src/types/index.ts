@@ -22,8 +22,11 @@ export interface ConfluenceData {
 
 export interface WorkflowState {
     role: Role;
-    jiraData: JiraData;
-    confData: ConfluenceData;
+    jiraId: string;
+    confId: string;
+    jiraData?: JiraData;
+    confData?: ConfluenceData;
+    output?: string;
 }
 
 export interface ApiResponse {
