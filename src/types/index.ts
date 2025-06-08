@@ -27,6 +27,7 @@ export interface WorkflowState {
     jiraData?: JiraData;
     confData?: ConfluenceData;
     output?: string;
+    error?: string;
 }
 
 export interface ApiResponse {
