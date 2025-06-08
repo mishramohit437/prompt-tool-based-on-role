@@ -7,7 +7,7 @@ A tool for generating prompts based on JIRA and Confluence data using OpenAI's G
 - Generate test cases from JIRA issues and Confluence documentation
 - Analyze requirements and generate clarifying questions
 - Role-based prompt generation (Tester/Business Analyst)
-- Workflow orchestrated with **LangGraph**
+- Simple workflow orchestrates data retrieval and prompt generation
 
 ## Prerequisites
 
@@ -35,7 +35,7 @@ Start the development server:
 npm run dev
 ```
 
-This project uses **LangGraph** to coordinate data retrieval and prompt generation.
+The server coordinates JIRA and Confluence data retrieval before calling OpenAI to generate a response.
 
 Build for production (optional):
 ```bash

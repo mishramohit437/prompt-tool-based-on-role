@@ -27,7 +27,6 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "langchain": "^0.3.27",
-    "@langchain/langgraph": "^0.0.14",
     "morgan": "^1.10.0",
     "winston": "^3.17.0",
     "zod": "^3.25.56",
