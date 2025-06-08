@@ -1,4 +1,3 @@
-import OpenAI from 'openai';
 import { Role, WorkflowState } from '../types/index.js';
 import logger from '../utils/logger.js';
 import dotenv from 'dotenv';
@@ -7,18 +6,16 @@ import dotenv from 'dotenv';
 dotenv.config({ path: process.cwd() + '/.env' });
 
 class PromptGenerationService {
-    private client: OpenAI;
+    private apiKey: string;
     
     constructor() {
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) {
             throw new Error('OPENAI_API_KEY is not set in environment variables');
         }
-        
+
         logger.info('Initializing OpenAI client with API key');
-        this.client = new OpenAI({
-            apiKey: apiKey
-        });
+        this.apiKey = apiKey;
     }
 
     private getTesterPrompt(state: WorkflowState): string {
@@ -64,19 +61,35 @@ class PromptGenerationService {
             if (!state.jiraData || !state.confData) {
                 throw new Error('Missing required data: JIRA or Confluence data is missing');
             }
+
             const prompt = this.getPromptBasedOnRole(state);
 
-            // Call OpenAI API
-            const response = await this.client.chat.completions.create({
-                model: 'gpt-4',
-                messages: [
-                    { role: 'system', content: 'You are a helpful assistant.' },
-                    { role: 'user', content: prompt }
-                ],
-                temperature: 0.7
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4',
+                    messages: [
+                        { role: 'system', content: 'You are a helpful assistant.' },
+                        { role: 'user', content: prompt }
+                    ],
+                    temperature: 0.7
+                })
             });
 
-            const result = response.choices[0]?.message?.content;
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`OpenAI request failed: ${response.status} ${text}`);
+            }
+
+            const data = await response.json() as {
+                choices: Array<{ message: { content: string } }>;
+            };
+
+            const result = data.choices[0]?.message?.content;
             if (!result) {
                 throw new Error('No response from AI');
             }

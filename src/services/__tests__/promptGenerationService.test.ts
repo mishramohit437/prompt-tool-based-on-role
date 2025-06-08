@@ -2,26 +2,16 @@ import { jest, describe, beforeAll, afterAll, beforeEach, it, expect } from '@je
 import { Role, WorkflowState, JiraData, ConfluenceData } from '../../types/index.js';
 import PromptGenerationService from '../promptGenerationService.js';
 
-// Mock the openai module
-const mockCreate = jest.fn();
+// Mock fetch
+const mockFetch = jest.fn();
 
-// Mock the openai module with proper typing
-jest.unstable_mockModule('openai', () => ({
-    default: jest.fn().mockImplementation(() => ({
-        chat: {
-            completions: {
-                create: mockCreate
-            }
-        }
-    }))
-}));
 
 // Helper for mock responses
 const mockResponse = (content: string) => ({
     choices: [{
-        message: { 
+        message: {
             content,
-            role: 'assistant' 
+            role: 'assistant'
         }
     }]
 });
@@ -35,9 +25,6 @@ type MockResponse = {
         };
     }>;
 };
-
-// Type assertion for mock function
-const asMockResponse = (response: MockResponse) => response as unknown as ReturnType<typeof mockCreate>;
 
 describe('PromptGenerationService', () => {
     let service: PromptGenerationService;
@@ -67,6 +54,8 @@ describe('PromptGenerationService', () => {
         // Save original environment variables
         originalEnv = { ...process.env };
         process.env.OPENAI_API_KEY = 'test-api-key';
+        // @ts-ignore
+        global.fetch = mockFetch;
     });
 
     afterAll(() => {
@@ -82,20 +71,25 @@ describe('PromptGenerationService', () => {
     });
 
     it('should generate tester prompt successfully', async () => {
-        // Mock the OpenAI API response
         const mockResponseData = mockResponse('Test prompt response');
-        mockCreate.mockResolvedValueOnce(asMockResponse(mockResponseData));
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => mockResponseData
+        } as any);
 
         const result = await service.generatePrompt(mockWorkflowState);
 
         expect(result).toBe('Test prompt response');
-        expect(mockCreate).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     it('should generate BA prompt successfully', async () => {
         // Mock the OpenAI API response
         const mockResponseData = mockResponse('BA prompt response');
-        mockCreate.mockResolvedValueOnce(asMockResponse(mockResponseData));
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => mockResponseData
+        } as any);
 
         const baWorkflowState: WorkflowState = {
             ...mockWorkflowState,
@@ -105,7 +99,7 @@ describe('PromptGenerationService', () => {
         const result = await service.generatePrompt(baWorkflowState);
 
         expect(result).toBe('BA prompt response');
-        expect(mockCreate).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
     });
 
     it('should throw error when data is missing', async () => {
@@ -120,18 +114,19 @@ describe('PromptGenerationService', () => {
     });
 
     it('should handle OpenAI API errors', async () => {
-        // Mock an API error
-        const error = new Error('API Error');
-        mockCreate.mockImplementationOnce(() => Promise.reject(error));
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 500,
+            text: async () => 'API Error'
+        } as any);
 
         await expect(service.generatePrompt(mockWorkflowState))
             .rejects
-            .toThrow('Failed to generate prompt using OpenAI API: API Error');
+            .toThrow('Failed to generate prompt using OpenAI API: OpenAI request failed: 500 API Error');
     });
 
     it('should handle unknown errors', async () => {
-        // Mock an unknown error
-        mockCreate.mockImplementationOnce(() => Promise.reject(new Error('Unknown error')));
+        mockFetch.mockRejectedValueOnce(new Error('Unknown error'));
 
         await expect(service.generatePrompt(mockWorkflowState))
             .rejects
